@@ -7,20 +7,21 @@ const getDrones = asyncHandler(async (req, res) => {
 });
 
 const createDrone = asyncHandler(async (req, res) => {
-  const { serialNumber, model, location, batteryLevel, status } = req.body;
+  const { name, model, serialNumber, battery, status, location } = req.body;
 
-  if (!serialNumber || !model || !location) {
+  if (!name || !model || !serialNumber) {
     res.status(400);
-    throw new Error("Please add all required fields");
+    throw new Error("Please add all required fields: name, model, serialNumber");
   }
 
   const drone = await Drone.create({
     user: req.user.id,
-    serialNumber,
+    name,
     model,
-    location,
-    batteryLevel,
-    status,
+    serialNumber,
+    battery: battery || 100,
+    status: status || "inactive",
+    location: location || { latitude: null, longitude: null, altitude: null },
   });
 
   res.status(201).json(drone);
@@ -31,18 +32,28 @@ const updateDrone = asyncHandler(async (req, res) => {
 
   if (!drone) {
     res.status(404);
-    throw new Error("Drone not found");
+    throw new Error("Drone not found.");
   }
 
-  // Ensure the logged-in user owns the drone
   if (drone.user.toString() !== req.user.id) {
     res.status(401);
-    throw new Error("User not authorized");
+    throw new Error("User not authorized.");
   }
 
-  const updatedDrone = await Drone.findByIdAndUpdate(req.params.id, req.body, {
-    new: true, // Returns the updated document
-  });
+  const { name, model, serialNumber, battery, status, location } = req.body;
+
+  const updatedDrone = await Drone.findByIdAndUpdate(
+    req.params.id,
+    {
+      name,
+      model,
+      serialNumber,
+      battery: battery || drone.battery,
+      status: status || drone.status,
+      location: location || drone.location,
+    },
+    { new: true },
+  );
 
   res.status(200).json(updatedDrone);
 });

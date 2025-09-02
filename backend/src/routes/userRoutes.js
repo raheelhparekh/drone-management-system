@@ -1,5 +1,5 @@
 import express from "express";
-import { registerUser, loginUser } from "../controllers/userController.js";
+import { registerUser, loginUser, logoutUser } from "../controllers/userController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -14,5 +14,7 @@ router.get("/profile", protect, (req, res) => {
     email: req.user.email,
   });
 });
+
+router.post("/logout", protect, logoutUser)
 
 export default router;
