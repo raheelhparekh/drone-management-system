@@ -11,6 +11,7 @@ import droneRoutes from './routes/droneRoutes.js';
 import missionRoutes from './routes/missionRoutes.js';
 import realtimeRoutes from './routes/realtimeRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
+import simulationRoutes from './routes/simulationRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 dotenv.config();
@@ -25,26 +26,27 @@ const corsOptions = {
   origin: ['http://localhost:5173','http://localhost:5174'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+  credentials: true, 
 };
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
+app.use(cookieParser()); 
 
-// Use the API routes
+
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/drones', droneRoutes);
 app.use('/api/v1/missions', missionRoutes);
 app.use('/api/v1/realtime', realtimeRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/simulation', simulationRoutes);
 
-// Define a simple test route for the root path
+
 app.get('/', (req, res) => {
   res.send('Drone Survey Management System Backend is running!');
 });
 
-// Error Handling Middleware
+// Error Handling Middleware 
 app.use(notFound);
 app.use(errorHandler);
 

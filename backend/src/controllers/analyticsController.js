@@ -1,84 +1,102 @@
-import Mission from '../models/missionModel.js';
 import Drone from '../models/droneModel.js';
+import Mission from '../models/missionModel.js';
 
 // Get comprehensive dashboard analytics
 export const getDashboardAnalytics = async (req, res) => {
   try {
-    const userId = req.user.id;
-
-    // Get all user missions and drones
-    const [missions, drones] = await Promise.all([
-      Mission.find({ user: userId }).populate('assignedDrone'),
-      Drone.find({ user: userId })
-    ]);
+    // Get all drones and missions for the user
+    const drones = await Drone.find({ owner: req.user._id });
+    const missions = await Mission.find({ createdBy: req.user._id });
 
     // Calculate fleet statistics
-    const fleetStats = {
-      totalDrones: drones.length,
-      activeDrones: drones.filter(drone => drone.status === 'in-mission').length,
-      availableDrones: drones.filter(drone => drone.status === 'available').length,
-      maintenanceDrones: drones.filter(drone => drone.status === 'maintenance').length,
-      averageBattery: drones.length > 0 ? 
-        Math.round(drones.reduce((sum, drone) => sum + drone.battery, 0) / drones.length) : 0
-    };
+    const totalDrones = drones.length;
+    const activeDrones = drones.filter(drone => drone.status === 'available' || drone.status === 'in-mission').length;
+    const dronesInMission = drones.filter(drone => drone.status === 'in-mission').length;
+    const dronesInMaintenance = drones.filter(drone => drone.status === 'maintenance').length;
+
+    // Calculate average battery level
+    const avgBattery = drones.length > 0 
+      ? Math.round(drones.reduce((sum, drone) => sum + drone.battery, 0) / drones.length)
+      : 0;
 
     // Calculate mission statistics
-    const missionStats = {
-      totalMissions: missions.length,
-      activeMissions: missions.filter(m => m.status === 'in-progress').length,
-      completedMissions: missions.filter(m => m.status === 'completed').length,
-      pendingMissions: missions.filter(m => m.status === 'pending').length,
-      abortedMissions: missions.filter(m => m.status === 'aborted').length
-    };
+    const totalMissions = missions.length;
+    const completedMissions = missions.filter(mission => mission.status === 'completed').length;
+    const inProgressMissions = missions.filter(mission => mission.status === 'in-progress').length;
+    const pendingMissions = missions.filter(mission => mission.status === 'pending').length;
+    const failedMissions = missions.filter(mission => mission.status === 'failed' || mission.status === 'aborted').length;
 
-    // Calculate survey statistics
-    const surveyMissions = missions.filter(m => m.type === 'survey');
-    const completedSurveys = surveyMissions.filter(m => m.status === 'completed');
+    // Calculate mission completion rate
+    const completionRate = totalMissions > 0 
+      ? Math.round((completedMissions / totalMissions) * 100)
+      : 0;
+
+    // Recent activity (last 7 days)
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
     
-    const surveyStats = {
-      totalSurveys: surveyMissions.length,
-      completedSurveys: completedSurveys.length,
-      totalAreaCovered: completedSurveys.reduce((sum, mission) => 
-        sum + (mission.flightStats?.areaCovered || 0), 0),
-      totalFlightTime: completedSurveys.reduce((sum, mission) => 
-        sum + (mission.flightStats?.duration || 0), 0),
-      totalDistance: completedSurveys.reduce((sum, mission) => 
-        sum + (mission.flightStats?.distanceCovered || 0), 0),
-      averageFlightTime: completedSurveys.length > 0 ?
-        Math.round(completedSurveys.reduce((sum, mission) => 
-          sum + (mission.flightStats?.duration || 0), 0) / completedSurveys.length) : 0
-    };
+    const recentMissions = missions.filter(mission => 
+      new Date(mission.createdAt) >= weekAgo
+    ).length;
 
-    // Get recent missions for timeline
-    const recentMissions = missions
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-      .slice(0, 10)
-      .map(mission => ({
-        id: mission._id,
-        name: mission.name,
-        status: mission.status,
-        type: mission.type,
-        progress: mission.progress?.percentage || 0,
-        drone: mission.assignedDrone?.name || 'Unassigned',
-        updatedAt: mission.updatedAt
-      }));
+    // Fleet health score (based on battery levels and maintenance needs)
+    const healthyDrones = drones.filter(drone => 
+      drone.battery > 30 && drone.status !== 'maintenance' && drone.status !== 'error'
+    ).length;
+    const fleetHealthScore = totalDrones > 0 
+      ? Math.round((healthyDrones / totalDrones) * 100)
+      : 100;
 
-    // Battery levels for fleet monitoring
-    const batteryLevels = drones.map(drone => ({
-      id: drone._id,
-      name: drone.name,
-      battery: drone.battery,
-      status: drone.status
-    }));
+    // Usage patterns
+    const missionsByType = missions.reduce((acc, mission) => {
+      acc[mission.type] = (acc[mission.type] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Daily activity for the last 7 days
+    const dailyActivity = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+      
+      const dayMissions = missions.filter(mission => {
+        const missionDate = new Date(mission.createdAt);
+        return missionDate >= date && missionDate < nextDate;
+      }).length;
+      
+      dailyActivity.push({
+        date: date.toISOString().split('T')[0],
+        missions: dayMissions
+      });
+    }
 
     res.json({
-      fleetStats,
-      missionStats,
-      surveyStats,
-      recentMissions,
-      batteryLevels
+      fleet: {
+        totalDrones,
+        activeDrones,
+        dronesInMission,
+        dronesInMaintenance,
+        avgBattery,
+        fleetHealthScore
+      },
+      missions: {
+        totalMissions,
+        completedMissions,
+        inProgressMissions,
+        pendingMissions,
+        failedMissions,
+        completionRate,
+        recentMissions,
+        missionsByType
+      },
+      activity: {
+        dailyActivity
+      }
     });
-
   } catch (error) {
     console.error('Analytics error:', error);
     res.status(500).json({ message: 'Server error fetching analytics' });
@@ -88,61 +106,76 @@ export const getDashboardAnalytics = async (req, res) => {
 // Get detailed mission analytics
 export const getMissionAnalytics = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { timeRange = '30' } = req.query; // days
+    const missions = await Mission.find({ createdBy: req.user._id })
+      .populate('assignedDrone')
+      .sort({ createdAt: -1 });
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - parseInt(timeRange));
+    // Mission performance metrics
+    const performanceData = missions.map(mission => {
+      const duration = mission.completedAt && mission.startedAt
+        ? Math.round((new Date(mission.completedAt) - new Date(mission.startedAt)) / (1000 * 60)) // minutes
+        : null;
 
-    const missions = await Mission.find({
-      user: userId,
-      createdAt: { $gte: startDate }
-    }).populate('assignedDrone');
-
-    // Mission performance over time
-    const dailyStats = {};
-    missions.forEach(mission => {
-      const date = mission.createdAt.toISOString().split('T')[0];
-      if (!dailyStats[date]) {
-        dailyStats[date] = {
-          date,
-          missions: 0,
-          completed: 0,
-          flightTime: 0,
-          areaCovered: 0
-        };
-      }
-      dailyStats[date].missions++;
-      if (mission.status === 'completed') {
-        dailyStats[date].completed++;
-        dailyStats[date].flightTime += mission.flightStats?.duration || 0;
-        dailyStats[date].areaCovered += mission.flightStats?.areaCovered || 0;
-      }
+      return {
+        id: mission._id,
+        name: mission.name,
+        type: mission.type,
+        status: mission.status,
+        duration,
+        startedAt: mission.startedAt,
+        completedAt: mission.completedAt,
+        assignedDrone: mission.assignedDrone ? {
+          name: mission.assignedDrone.name,
+          model: mission.assignedDrone.model
+        } : null,
+        waypoints: mission.flightPath ? mission.flightPath.length : 0
+      };
     });
 
-    const performanceData = Object.values(dailyStats).sort((a, b) => 
-      new Date(a.date) - new Date(b.date)
-    );
-
-    // Mission types distribution
-    const typeDistribution = missions.reduce((acc, mission) => {
-      acc[mission.type] = (acc[mission.type] || 0) + 1;
+    // Average mission duration by type
+    const durationByType = missions.reduce((acc, mission) => {
+      if (mission.completedAt && mission.startedAt && mission.type) {
+        const duration = Math.round((new Date(mission.completedAt) - new Date(mission.startedAt)) / (1000 * 60));
+        if (!acc[mission.type]) {
+          acc[mission.type] = { total: 0, count: 0 };
+        }
+        acc[mission.type].total += duration;
+        acc[mission.type].count += 1;
+      }
       return acc;
     }, {});
 
-    // Status distribution
-    const statusDistribution = missions.reduce((acc, mission) => {
-      acc[mission.status] = (acc[mission.status] || 0) + 1;
+    // Calculate averages
+    const avgDurationByType = Object.keys(durationByType).reduce((acc, type) => {
+      acc[type] = Math.round(durationByType[type].total / durationByType[type].count);
+      return acc;
+    }, {});
+
+    // Success rate by drone
+    const dronePerformance = missions.reduce((acc, mission) => {
+      if (mission.assignedDrone) {
+        const droneId = mission.assignedDrone._id.toString();
+        if (!acc[droneId]) {
+          acc[droneId] = {
+            name: mission.assignedDrone.name,
+            model: mission.assignedDrone.model,
+            total: 0,
+            completed: 0
+          };
+        }
+        acc[droneId].total += 1;
+        if (mission.status === 'completed') {
+          acc[droneId].completed += 1;
+        }
+      }
       return acc;
     }, {});
 
     res.json({
       performanceData,
-      typeDistribution,
-      statusDistribution,
-      totalMissions: missions.length
+      avgDurationByType,
+      dronePerformance
     });
-
   } catch (error) {
     console.error('Mission analytics error:', error);
     res.status(500).json({ message: 'Server error fetching mission analytics' });
@@ -152,73 +185,36 @@ export const getMissionAnalytics = async (req, res) => {
 // Get fleet performance analytics
 export const getFleetAnalytics = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const drones = await Drone.find({ user: userId });
+    const drones = await Drone.find({ owner: req.user._id });
 
-    // Fleet utilization
-    const fleetUtilization = drones.map(drone => ({
+    // Battery analytics
+    const batteryData = drones.map(drone => ({
       id: drone._id,
       name: drone.name,
       model: drone.model,
-      totalFlightTime: drone.totalStats?.totalFlightTime || 0,
-      totalMissions: drone.totalStats?.totalMissions || 0,
-      utilization: drone.totalStats?.totalFlightTime ? 
-        Math.min(100, (drone.totalStats.totalFlightTime / (30 * 24 * 60)) * 100) : 0, // 30 days
-      status: drone.status,
-      battery: drone.battery
+      battery: drone.battery,
+      status: drone.status
     }));
 
-    // Battery health trends
-    const batteryTrends = drones.map(drone => ({
-      name: drone.name,
-      current: drone.battery,
-      trend: Math.random() > 0.5 ? 'up' : 'down', // Would be calculated from historical data
-      health: drone.battery > 80 ? 'good' : drone.battery > 50 ? 'fair' : 'poor'
-    }));
+    // Usage statistics
+    const statusDistribution = drones.reduce((acc, drone) => {
+      acc[drone.status] = (acc[drone.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Model popularity
+    const modelDistribution = drones.reduce((acc, drone) => {
+      acc[drone.model] = (acc[drone.model] || 0) + 1;
+      return acc;
+    }, {});
 
     res.json({
-      fleetUtilization,
-      batteryTrends,
-      totalDrones: drones.length
+      batteryData,
+      statusDistribution,
+      modelDistribution
     });
-
   } catch (error) {
     console.error('Fleet analytics error:', error);
     res.status(500).json({ message: 'Server error fetching fleet analytics' });
-  }
-};
-
-// Get live mission data for real-time monitoring
-export const getLiveMissionData = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    const activeMissions = await Mission.find({
-      user: userId,
-      status: 'in-progress'
-    }).populate('assignedDrone');
-
-    const liveMissions = activeMissions.map(mission => ({
-      id: mission._id,
-      name: mission.name,
-      drone: {
-        id: mission.assignedDrone?._id,
-        name: mission.assignedDrone?.name,
-        location: mission.assignedDrone?.location,
-        battery: mission.assignedDrone?.battery,
-        telemetry: mission.assignedDrone?.telemetry
-      },
-      progress: mission.progress,
-      flightPath: mission.flightPath,
-      waypoints: mission.waypoints,
-      area: mission.area,
-      estimatedTimeRemaining: mission.progress?.estimatedTimeRemaining || 0
-    }));
-
-    res.json(liveMissions);
-
-  } catch (error) {
-    console.error('Live mission data error:', error);
-    res.status(500).json({ message: 'Server error fetching live mission data' });
   }
 };
