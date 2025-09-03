@@ -54,7 +54,7 @@ export const useMissionStore = create((set, get) => ({
           set((state) => ({
             missions: state.missions.map((mission) =>
               mission._id === data.mission._id 
-                ? { ...mission, assignedDrone: data.drone }
+                ? { ...mission, drone: data.drone } // Match backend field name
                 : mission
             ),
           }));

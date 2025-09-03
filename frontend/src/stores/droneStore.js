@@ -1,11 +1,10 @@
 import { create } from 'zustand';
 import axiosInstance from '../api/axios';
 import socketService from '../services/socketService';
-import toast from 'react-hot-toast';
 
 const API_URL = '/drones/';
 
-export const useDroneStore = create((set, get) => ({
+export const useDroneStore = create((set) => ({
   drones: [],
   isLoading: false,
   error: null,
@@ -15,7 +14,7 @@ export const useDroneStore = create((set, get) => ({
     activeUpdates: 0
   },
 
-  // Setup real-time connection for drones
+  // Setup real-time connection
   initializeRealTime: () => {
     const handleDroneUpdate = (data) => {
       console.log('Drone update received:', data);
@@ -28,26 +27,31 @@ export const useDroneStore = create((set, get) => ({
         }
       }));
 
-      switch (data.type) {
-        case 'drone_update':
-          set((state) => ({
-            drones: state.drones.map((drone) =>
-              drone._id === data.drone._id ? data.drone : drone
-            ),
-          }));
-          
-          // Show toast for critical updates
-          if (data.drone.battery < 20) {
-            toast.warning(`Drone "${data.drone.name}" battery low: ${data.drone.battery}%`);
-          }
-          if (data.drone.status === 'error') {
-            toast.error(`Drone "${data.drone.name}" encountered an error!`);
-          }
-          break;
-      }
+      // Update specific drone in the list
+      set((state) => ({
+        drones: state.drones.map((drone) =>
+          drone._id === data.droneId 
+            ? { 
+                ...drone, 
+                batteryLevel: data.batteryLevel, // Match backend field name
+                location: data.location,
+                status: data.status,
+                telemetry: data.telemetry
+              }
+            : drone
+        ),
+      }));
     };
 
     socketService.onDroneUpdate(handleDroneUpdate);
+    
+    // Update connection status
+    set((state) => ({
+      realTimeStatus: {
+        ...state.realTimeStatus,
+        isConnected: socketService.getConnectionStatus().isConnected
+      }
+    }));
   },
 
   fetchDrones: async () => {
@@ -69,12 +73,10 @@ export const useDroneStore = create((set, get) => ({
         drones: [...state.drones, response.data],
         isLoading: false,
       }));
-      toast.success('Drone created successfully!');
       return response.data;
     } catch (error) {
       const message = error.response?.data?.message || 'Failed to create drone';
       set({ error: message, isLoading: false });
-      toast.error(message);
       throw new Error(message);
     }
   },
@@ -105,25 +107,10 @@ export const useDroneStore = create((set, get) => ({
         drones: state.drones.filter((drone) => drone._id !== id),
         isLoading: false,
       }));
-      toast.success('Drone deleted successfully!');
     } catch (error) {
       const message = error.response?.data?.message || 'Failed to delete drone';
       set({ error: message, isLoading: false });
-      toast.error(message);
+      throw new Error(message);
     }
   },
-
-  // Real-time drone status update
-  updateDroneRealTime: async (id, statusData) => {
-    try {
-      await axiosInstance.put(`/realtime/drones/${id}/status`, statusData);
-      // Real-time update will be handled by socket listener
-    } catch (error) {
-      const message = error.response?.data?.message || 'Failed to update drone status';
-      toast.error(message);
-    }
-  },
-
-  // Get real-time status
-  getRealTimeStatus: () => get().realTimeStatus,
 }));

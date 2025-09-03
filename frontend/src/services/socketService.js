@@ -4,31 +4,29 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.isConnected = false;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
   }
 
   connect(userId) {
     if (this.socket) {
-      this.disconnect();
+      return this.socket;
     }
 
     this.socket = io('http://localhost:8000', {
-      withCredentials: true,
+      reconnection: true,
       transports: ['websocket', 'polling']
     });
 
     this.socket.on('connect', () => {
       console.log('Socket.IO connected:', this.socket.id);
       this.isConnected = true;
-      this.reconnectAttempts = 0;
       
-      // Join user-specific room
-      this.socket.emit('join_user_room', userId);
+      if (userId) {
+        this.socket.emit('join_user_room', userId);
+      }
     });
 
     this.socket.on('connection_confirmed', (data) => {
-      console.log('Real-time connection confirmed:', data);
+      console.log('Connection confirmed:', data);
     });
 
     this.socket.on('disconnect', () => {
@@ -39,13 +37,12 @@ class SocketService {
     this.socket.on('connect_error', (error) => {
       console.error('Socket.IO connection error:', error);
       this.isConnected = false;
-      
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        console.log(`Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-      }
     });
 
+    return this.socket;
+  }
+
+  getSocket() {
     return this.socket;
   }
 
@@ -57,52 +54,45 @@ class SocketService {
     }
   }
 
-  // Event listeners
-  onMissionUpdate(callback) {
-    if (this.socket) {
-      this.socket.on('missionUpdate', callback);
-    }
-  }
-
+  // Real-time event listeners
   onDroneUpdate(callback) {
     if (this.socket) {
       this.socket.on('droneUpdate', callback);
     }
   }
 
-  offMissionUpdate(callback) {
+  onMissionUpdate(callback) {
     if (this.socket) {
-      this.socket.off('missionUpdate', callback);
+      this.socket.on('missionUpdate', callback);
     }
   }
 
-  offDroneUpdate(callback) {
+  onFleetUpdate(callback) {
     if (this.socket) {
-      this.socket.off('droneUpdate', callback);
+      this.socket.on('fleetUpdate', callback);
     }
   }
 
-  // Health check
-  ping() {
-    if (this.socket && this.isConnected) {
-      this.socket.emit('ping');
-      return new Promise((resolve) => {
-        this.socket.once('pong', (data) => {
-          resolve(data);
-        });
-      });
+  // Emit events
+  emitDroneUpdate(data) {
+    if (this.socket) {
+      this.socket.emit('droneUpdate', data);
     }
-    return Promise.reject('Socket not connected');
   }
 
+  emitMissionUpdate(data) {
+    if (this.socket) {
+      this.socket.emit('missionUpdate', data);
+    }
+  }
+
+  // Connection status
   getConnectionStatus() {
     return {
       isConnected: this.isConnected,
-      socketId: this.socket?.id,
-      reconnectAttempts: this.reconnectAttempts
+      socketId: this.socket?.id || null
     };
   }
 }
 
-// Export singleton instance
 export default new SocketService();
